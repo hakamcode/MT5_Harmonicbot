@@ -1,0 +1,49 @@
+{
+  "mt5": {
+    "login": "",
+    "password": "",
+    "server": "",
+    "path": ""
+  },
+  "telegram": {
+    "bot_token": "PASTE_TOKEN_FROM_BOTFATHER",
+    "chat_id": "PASTE_YOUR_CHAT_ID",
+    "dry_run": false
+  },
+  "allow_live_trading": false,
+
+  "symbols": ["XMRUSD", "EURUSD", "GBPAUD", "EURAUD", "AUDNZD", "USDJPY", "USDCAD", "XAGUSD"],
+  "timeframes": ["H1", "H4"],
+  "bars": 500,
+  "scan_seconds": 30,
+
+  "money": {
+    "risk_percent": 1.0,
+    "max_lot": 1.0,
+    "max_open_positions": 3,
+    "one_position_per_symbol": true,
+    "tp1_close_percent": 50,
+    "move_sl_to_entry_at_tp1": true,
+    "daily_loss_limit_percent": 3.0,
+    "close_positions_at_daily_limit": false,
+    "close_all_button": "bot"
+  },
+
+  "butterfly": {
+    "swing_atr_mults": [2.5, 4, 6],
+    "ratio_tolerance": 0.05,
+    "xb_range": [0.74, 0.83],
+    "ac_range": [0.382, 0.886],
+    "bc_range": [1.618, 2.618],
+    "prz_xa": [1.27, 1.414],
+    "sl_xa": 1.618,
+    "sl_buffer_xa": 0.02,
+    "tp1_ad": 0.382,
+    "tp2_ad": 0.618,
+    "min_rr_tp1": 0.5,
+    "entry_window_bars": 10,
+    "watch_expiry_bars": 60,
+    "send_forming_alerts": true,
+    "send_prz_alerts": true
+  }
+}

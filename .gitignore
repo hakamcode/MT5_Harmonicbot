@@ -1,0 +1,12 @@
+# private settings (Telegram token, MT5 password, API keys)
+config.json
+# created while running
+state.json
+state_v3.json
+*.log
+charts/
+sim_out/
+sim_app/
+demo_out/
+__pycache__/
+*.tmp

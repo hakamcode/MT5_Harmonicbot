@@ -1,0 +1,57 @@
+{
+  "mt5": {
+    "login": "",
+    "password": "",
+    "server": "",
+    "path": ""
+  },
+  "telegram": {
+    "bot_token": "PASTE_TOKEN_FROM_BOTFATHER",
+    "chat_id": "PASTE_YOUR_CHAT_ID",
+    "dry_run": false
+  },
+  "detector": "claude",
+  "allow_live_trading": false,
+  "claude": {
+    "anthropic_api_key": "",
+    "model": "claude-opus-5-5",
+    "effort": "medium",
+    "review_events": ["watch", "entry"],
+    "scan_timeframes": ["H4"],
+    "scan_bars": 200,
+    "scan_effort": "medium",
+    "min_confidence": 60,
+    "max_scans_per_day": 5
+  },
+  "symbols": ["XMRUSD", "EURUSD", "GBPAUD", "EURAUD", "AUDNZD", "USDJPY", "USDCAD", "XAGUSD"],
+  "timeframes": ["H1", "H4", "D1"],
+  "bars": 600,
+  "poll_seconds": 30,
+  "strategy": {
+    "swing_atr_mults": [2.5, 4, 6],
+    "ratio_tolerance": 0.05,
+    "include_abcd": true,
+    "prz_min_width_xa": 0.03,
+    "prz_max_width_xa": 0.12,
+
+    "tp1_leg_ratio": 0.382,
+    "tp2_multiple": 1.618,
+    "stop_buffer": 0.4,
+
+    "entry_mode": "confirm",
+    "watch_expiry_bars": 60,
+    "tp1_close_percent": 50,
+    "ts_lock_ratio": 0.0,
+    "tp2_max_bars": 80,
+
+    "send_watch_alerts": true,
+    "send_touch_alerts": true,
+    "keep_history_days": 30,
+
+    "auto_trade": false,
+    "lot_size": 0.01,
+    "max_lot": 0.05,
+    "max_open_trades": 3,
+    "min_rr_tp1": 0.3
+  }
+}
