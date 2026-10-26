@@ -96,6 +96,7 @@ class Setup:
     last_bar: Optional[str] = None
     ticket: Optional[int] = None
     note: str = ""
+    chart: str = ""           # latest chart picture of this setup (shown in the app)
 
     @property
     def key(self) -> str:

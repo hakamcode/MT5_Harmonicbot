@@ -3,15 +3,19 @@
 A desktop app that trades **only the Butterfly harmonic pattern** (bullish and bearish) on your MT5 account,
 with full money management, and sends every action to your Telegram.
 
-What you see in the app:
+What you see in the app (laid out like MetaTrader 5):
 
-- **Start bot / Stop bot** buttons and a status line (running, stopped, or stopped for today)
-- Account **balance, equity, open P/L, today's P/L** (and how far the daily stop is), bot positions `n / 3`
-- **Open positions (live)**: symbol, side, lots, entry, stop loss, TP2, current price, P/L and the stage
-  (waiting for TP1, or TP1 done with the stop at entry). Manual trades are shown too, marked `manual`.
-- **Close all bot positions** button (asks you to confirm and shows the total P/L first)
-- **Butterflies forming**: setups the bot is waiting on, with the PRZ and stop
-- **Activity**: everything the bot did (the same messages go to Telegram)
+- **Toolbar**: Start Bot / Stop Bot, Close All Bot Positions (asks to confirm and shows the total P/L), bot ON/OFF
+- **Market Watch**: live bid, ask and spread of your symbols
+- **Bot settings**: the money management rules in use
+- **Chart**: the Butterfly of each open trade or forming setup (click the tabs under the chart, or a row in the tables)
+- **Toolbox** tabs at the bottom, like MT5:
+  - **Trade**: open positions with S/L, T/P, profit and the bot stage, plus the balance/equity line.
+    Right-click (or double-click) a position to close just that one.
+  - **Butterflies**: setups the bot is waiting on, with the PRZ and stop
+  - **History**: the bot's closed trades, how they closed (TP2, stop loss, ...) and the total result
+  - **Journal**: everything the bot did (the same messages go to Telegram)
+- **Status bar**: what the bot is doing, connection, and today's P/L with the daily stop level
 
 v2 (`harmonic-bot`) is untouched and still works on its own.
 

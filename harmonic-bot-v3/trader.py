@@ -40,6 +40,7 @@ class Bot:
         self.commands: queue.Queue = queue.Queue()
         self.events: deque = deque(maxlen=300)
         self.snapshot: dict = {}
+        self.history: list[dict] = []          # closed bot trades, newest last
         self.symbols = list(cfg["symbols"])
         self._digits: dict[str, int] = {}
         self._load()
@@ -54,6 +55,7 @@ class Bot:
             self.setups = {k: Setup.from_dict(v) for k, v in d.get("setups", {}).items()}
             self.trades = d.get("trades", {})
             self.day = d.get("day", self.day)
+            self.history = d.get("history", [])
         except Exception:
             log.exception("could not read %s, starting fresh", self.state_file)
 
@@ -65,7 +67,7 @@ class Bot:
         tmp = self.state_file + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"setups": {k: s.to_dict() for k, s in self.setups.items()}, "trades": self.trades,
-                       "day": self.day}, f, indent=1, default=str)
+                       "day": self.day, "history": self.history[-200:]}, f, indent=1, default=str)
         os.replace(tmp, self.state_file)
 
     # ------------------------------------------------------------------ messages
@@ -103,7 +105,10 @@ class Bot:
         while not self.commands.empty():
             cmd = self.commands.get()
             try:
-                {"start": self.start, "stop": self.stop, "close_all": self.close_all}[cmd]()
+                if isinstance(cmd, tuple) and cmd[0] == "close":
+                    self.close_one(int(cmd[1]))
+                else:
+                    {"start": self.start, "stop": self.stop, "close_all": self.close_all}[cmd]()
             except Exception:
                 log.exception("command %s failed", cmd)
                 self.event(f"❗ '{cmd}' failed, see the log window", telegram=False)
@@ -174,6 +179,21 @@ class Bot:
         self._manage(self.broker.positions())
         self.save()
 
+    def close_one(self, ticket: int):
+        p = next((p for p in self.broker.positions() if p["ticket"] == ticket), None)
+        if p is None:
+            return
+        tr = self.trades.get(str(ticket))
+        if tr:
+            tr["close_reason"] = "Close button in the app"
+        err = self.broker.close(ticket)
+        if err:
+            self.event(f"❗ Could not close {p['symbol']} #{ticket}: {err}")
+        elif not tr:
+            self.event(f"✋ {p['symbol']} #{ticket} closed from the app (result {self._money(p['profit'])})")
+        self._manage(self.broker.positions())
+        self.save()
+
     # ------------------------------------------------------------------ daily loss limit
     def _daily(self, acc: dict):
         today = self.broker.today()
@@ -241,8 +261,8 @@ class Bot:
                     f"Stop (beyond 1.618 XA): {self._f(sym, s.stop)}\n"
                     f"Ratios: XB {s.ratios['XB']} · AC {s.ratios['AC']}\n"
                     "The bot will enter on a reversal candle in the PRZ.")
-            self.event(text, telegram=self.bf.get("send_forming_alerts", True),
-                       photo=self._chart(df, s) if self.bf.get("send_forming_alerts", True) and self.tg else None)
+            s.chart = self._chart(df, s) or ""
+            self.event(text, telegram=self.bf.get("send_forming_alerts", True), photo=s.chart or None)
 
     def _overlaps(self, new: Setup) -> bool:
         lo, hi = sorted((new.prz_inner, new.prz_outer))
@@ -340,7 +360,9 @@ class Bot:
                 f"Entry {f(fill)} · {lot} lots (risk ≈ {risk_txt} = {self.mm['risk_percent']}%)\n"
                 f"Stop loss {f(sl)}\nTP1 {f(tp1)} (close {self.mm['tp1_close_percent']}%, SL to entry)\n"
                 f"TP2 {f(tp2)}\nRR to TP1 {rr:.2f} · ticket {ticket}")
-        self.event(text, photo=self._chart(df, s) if self.tg else None)
+        s.chart = self._chart(df, s) or ""
+        self.trades[str(ticket)]["chart"] = s.chart
+        self.event(text, photo=s.chart or None)
 
     # ------------------------------------------------------------------ managing open trades
     def _manage(self, positions: list[dict]):
@@ -394,6 +416,12 @@ class Bot:
             return
         pl = self._money(info["profit"])
         price = self._f(sym, info["price"])
+        reason = (tr.get("close_reason") or {"tp": "TP2", "sl": "SL at entry" if tr["tp1_done"] else "Stop loss",
+                                              "stopout": "Stop out"}.get(info["reason"], "Manual"))
+        self.history.append(dict(time=datetime.now().strftime("%Y.%m.%d %H:%M"), ticket=tr["ticket"], symbol=sym,
+                                 side=tr["side"], volume=tr["volume"], entry=tr["entry"], close=info["price"],
+                                 profit=info["profit"], reason=reason, tp1=tr["tp1_done"],
+                                 digits=self.digits(sym)))
         if tr.get("close_reason"):
             head = f"🧹 <b>{sym} closed by {tr['close_reason']}</b> at {price}"
         elif info["reason"] == "tp":
@@ -426,7 +454,8 @@ class Bot:
             tr = self.trades.get(str(p["ticket"]))
             stage = ("manual" if not p["bot"] else "bot" if not tr else
                      "TP1 done, SL at entry" if tr["tp1_done"] else f"waiting TP1 {self._f(tr['symbol'], tr['tp1'])}")
-            rows.append({**p, "stage": stage, "timeframe": tr["timeframe"] if tr else "", "digits": self.digits(p["symbol"])})
+            rows.append({**p, "stage": stage, "timeframe": tr["timeframe"] if tr else "",
+                         "digits": self.digits(p["symbol"]), "chart": (tr or {}).get("chart", "")})
         start = self.day.get("start_balance")
         self.snapshot = dict(
             running=self.running, status=self.status, account=acc, positions=rows,
@@ -434,6 +463,17 @@ class Bot:
             day_limit=(start or 0) * self.mm["daily_loss_limit_percent"] / 100,
             day_stopped=self.day.get("stopped", ""),
             watching=[dict(symbol=s.symbol, timeframe=s.timeframe, label=s.label, inner=s.prz_inner, outer=s.prz_outer,
-                           stop=s.stop, touched=s.touched, digits=self.digits(s.symbol))
+                           stop=s.stop, touched=s.touched, digits=self.digits(s.symbol), chart=s.chart)
                       for s in self.setups.values() if s.state == "WATCH"],
-            events=list(self.events))
+            events=list(self.events), history=list(self.history[-100:]), quotes=self._quotes())
+
+    def _quotes(self) -> list[dict]:
+        out = []
+        for sym in self.symbols:
+            try:
+                q = self.broker.quote(sym)
+            except Exception:
+                q = None
+            if q:
+                out.append(dict(symbol=sym, bid=q[0], ask=q[1], digits=self.digits(sym)))
+        return out
