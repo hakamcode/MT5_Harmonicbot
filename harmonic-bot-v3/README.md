@@ -80,6 +80,15 @@ quickly on a fake 10,000 USD account so you can watch trades open, hit TP1, TP2 
 Close All button. Nothing is sent to Telegram (`python app.py --sim --send` sends them).
 `python test_sim.py` runs the same simulator without the window and writes the messages to `sim_out/`.
 
+## Test the MT5 order functions (demo account)
+
+Double-click **`Test MT5.bat`** (or `python test_mt5.py --symbol EURUSD`) with MT5 open on your **demo** account,
+Algo Trading on, and the app's trades closed. It checks, one by one, with the smallest lot:
+connect and account, symbol and price, lot size from risk, open BUY with SL/TP, move SL to entry, close half,
+close the rest and read the result, the bot's TP1 handling, and the Close All button. It ends with
+`RESULT: x of 24 checks passed` and closes everything it opened. It refuses to run on a real-money account.
+At the weekend use a crypto symbol: `python test_mt5.py --symbol XMRUSD`. Add `--telegram` to also get the messages.
+
 ## Files
 
 - `app.py` the window · `trader.py` the bot and money management · `butterfly.py` pattern finder

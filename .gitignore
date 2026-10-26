@@ -10,3 +10,4 @@ sim_app/
 demo_out/
 __pycache__/
 *.tmp
+test_mt5_out/
