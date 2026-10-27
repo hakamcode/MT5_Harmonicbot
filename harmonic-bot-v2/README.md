@@ -4,6 +4,43 @@ Scans your MT5 symbols for harmonic patterns (Gartley, Bat, Alt Bat, Butterfly, 
 draws the chart in your team's style and sends it to Telegram with the full trade plan, then follows
 each trade and tells you what to do: entry, TP1 (close part + move SL), TP2, or close when TP2 is invalid.
 
+
+## NEW: the v2 app (all harmonic patterns, auto trading, MT5-style window)
+
+`app.py` is the same app as Butterfly Bot v3, but it trades **every harmonic pattern**: Gartley, Bat, Alt Bat,
+Butterfly, Crab, Deep Crab and AB=CD. Pure Python (no Claude AI needed). Double-click **`Start Bot.bat`**.
+Try it first without MT5 with **`Try Simulator.bat`**, and check the order functions on demo with **`Test MT5.bat`**.
+
+Everything from v3 is here: MT5-style window (Market Watch, chart refreshed every 5 s, Trade / Patterns / History /
+Journal tabs, balance line, status bar), pop-up notifications, Start/Stop, Close All and close one position
+(right-click), Telegram messages for every action, and the same money management:
+
+| Rule | Default | Setting in `config.json` |
+|---|---|---|
+| Lot size | risk **1% of the balance** per trade | `money.risk_percent` |
+| Open positions | **max 3 at the same time**, no daily count limit; scanning is unlimited and a signal that comes while 3 are open waits for a free place | `money.max_open_positions` |
+| Entry | first reversal candle after price reaches the pattern's PRZ | `harmonic.entry_window_bars` |
+| Stop loss | just beyond the level where the pattern is wrong (see the table below) | `harmonic.patterns.<name>.sl_xa`, `sl_buffer_xa` |
+| TP1 / TP2 | 0.382 / 0.618 of the A→D leg (C→D for AB=CD); at TP1 close 50% and move the stop to entry | `harmonic.tp1_ad`, `tp2_ad`, `money.tp1_close_percent` |
+| Daily stop | no new trades for the rest of the day after a 3% loss | `money.daily_loss_limit_percent` |
+| Real money | refused unless you set `allow_live_trading` to true | `allow_live_trading` |
+
+| Pattern | B (of XA) | D zone / PRZ | Stop just beyond |
+|---|---|---|---|
+| Gartley | 0.58–0.66 | 0.786–0.83 XA | X (1.0 XA) |
+| Bat | 0.382–0.50 | 0.886–0.93 XA | X (1.0 XA) |
+| Alt Bat | 0.30–0.382 | 1.13–1.18 XA | 1.27 XA |
+| Butterfly | 0.74–0.83 | 1.27–1.414 XA | 1.618 XA |
+| Crab | 0.382–0.618 | 1.618–1.70 XA | 2.0 XA |
+| Deep Crab | 0.85–0.92 | 1.618–1.70 XA | 2.0 XA |
+| AB=CD | – | CD = 1.0–1.272 AB | 1.618 AB |
+
+Switch a pattern off with `"enabled": false` in `harmonic.patterns`. Your existing `config.json` keeps working:
+missing `money` / `harmonic` settings are taken from `config.example.json`. The app's orders are marked 777002
+(v3 uses 777003), so the two apps never touch each other's trades.
+
+The older alert bot (`bot.py`, with optional Claude AI) below still works on its own.
+
 ## What you get in Telegram
 
 | Alert | When | Chart |

@@ -17,7 +17,8 @@ def _fmt(v: float, digits: int) -> str:
     return f"{v:.{digits}f}"
 
 
-def render(df: pd.DataFrame, setups: list[Setup], path: str, digits: int = 5, bars: int = 160) -> str:
+def render(df: pd.DataFrame, setups: list[Setup], path: str, digits: int = 5, bars: int = 160,
+           price: float | None = None) -> str:
     s0 = setups[0]
     first_pt = min(pd.Timestamp(t) for t, _ in s0.points.values())
     start = max(0, min(len(df) - bars, df.index.get_indexer([first_pt], method="nearest")[0] - 10))
@@ -87,8 +88,13 @@ def render(df: pd.DataFrame, setups: list[Setup], path: str, digits: int = 5, ba
         else:
             hline(s.stop, "#e91e63", f"STOP ({s.rank})", ls=":")
 
+    if price is not None:                      # live price line, like MT5's bid line
+        ax.axhline(price, color="#757575", linewidth=0.7, linestyle=(0, (4, 3)))
+        ax.text(right + pad * 0.88, price, f" {_fmt(price, digits)} ", fontsize=7, va="center", ha="right",
+                color="white", bbox=dict(fc="#455a64", ec="none", pad=1.5))
     ax.set_xlim(-1, right + pad * 0.9)
     ys = [d["low"].min(), d["high"].max()] + [v for s in setups for v in (s.stop, s.tp2, s.prz_outer)]
+    ys += [price] if price is not None else []
     span = max(ys) - min(ys)
     ax.set_ylim(min(ys) - span * 0.04, max(ys) + span * 0.04)
     ticks = list(range(0, n, max(1, n // 8)))

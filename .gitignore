@@ -11,3 +11,4 @@ demo_out/
 __pycache__/
 *.tmp
 test_mt5_out/
+state_app.json

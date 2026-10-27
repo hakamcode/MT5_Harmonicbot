@@ -33,25 +33,55 @@
     "include_abcd": true,
     "prz_min_width_xa": 0.03,
     "prz_max_width_xa": 0.12,
-
     "tp1_leg_ratio": 0.382,
     "tp2_multiple": 1.618,
     "stop_buffer": 0.4,
-
     "entry_mode": "confirm",
     "watch_expiry_bars": 60,
     "tp1_close_percent": 50,
     "ts_lock_ratio": 0.0,
     "tp2_max_bars": 80,
-
     "send_watch_alerts": true,
     "send_touch_alerts": true,
     "keep_history_days": 30,
-
     "auto_trade": false,
     "lot_size": 0.01,
     "max_lot": 0.05,
     "max_open_trades": 3,
     "min_rr_tp1": 0.3
+  },
+  "scan_seconds": 30,
+  "chart_refresh_seconds": 5,
+  "money": {
+    "risk_percent": 1.0,
+    "max_lot": 1.0,
+    "max_open_positions": 3,
+    "one_position_per_symbol": true,
+    "tp1_close_percent": 50,
+    "move_sl_to_entry_at_tp1": true,
+    "daily_loss_limit_percent": 3.0,
+    "close_positions_at_daily_limit": false,
+    "close_all_button": "bot"
+  },
+  "harmonic": {
+    "swing_atr_mults": [2.5, 4, 6],
+    "ratio_tolerance": 0.05,
+    "sl_buffer_xa": 0.02,
+    "tp1_ad": 0.382,
+    "tp2_ad": 0.618,
+    "min_rr_tp1": 0.5,
+    "entry_window_bars": 10,
+    "watch_expiry_bars": 60,
+    "send_forming_alerts": true,
+    "send_prz_alerts": true,
+    "patterns": {
+      "Gartley": {"enabled": true, "xb": [0.58, 0.66], "ac": [0.382, 0.886], "bc": [1.13, 1.618], "prz_xa": [0.786, 0.83], "sl_xa": 1.0},
+      "Bat": {"enabled": true, "xb": [0.382, 0.5], "ac": [0.382, 0.886], "bc": [1.618, 2.618], "prz_xa": [0.886, 0.93], "sl_xa": 1.0},
+      "Alt Bat": {"enabled": true, "xb": [0.3, 0.382], "ac": [0.382, 0.886], "bc": [2.0, 3.618], "prz_xa": [1.13, 1.18], "sl_xa": 1.27},
+      "Butterfly": {"enabled": true, "xb": [0.74, 0.83], "ac": [0.382, 0.886], "bc": [1.618, 2.618], "prz_xa": [1.27, 1.414], "sl_xa": 1.618},
+      "Crab": {"enabled": true, "xb": [0.382, 0.618], "ac": [0.382, 0.886], "bc": [2.24, 3.618], "prz_xa": [1.618, 1.7], "sl_xa": 2.0},
+      "Deep Crab": {"enabled": true, "xb": [0.85, 0.92], "ac": [0.382, 0.886], "bc": [2.0, 3.618], "prz_xa": [1.618, 1.7], "sl_xa": 2.0},
+      "AB=CD": {"enabled": true, "ac": [0.382, 0.886], "cd_ab": [1.0, 1.272], "sl_ab": 1.618}
+    }
   }
 }
