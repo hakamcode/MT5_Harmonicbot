@@ -79,16 +79,20 @@ class MT5Broker:
             self._names[symbol] = name
         return name
 
-    def candles(self, symbol: str, tf: str, count: int) -> pd.DataFrame:
-        """Closed bars only (the forming bar is dropped)."""
+    def watch_symbols(self) -> list[str]:
+        """Every symbol shown in MT5's Market Watch window."""
+        return [x.name for x in (mt5.symbols_get() or []) if x.visible]
+
+    def candles(self, symbol: str, tf: str, count: int, live: bool = False) -> pd.DataFrame:
+        """Closed bars only (the forming bar is dropped), or with live=True including the forming bar."""
         name = self.resolve(symbol)
         if name is None:
             raise RuntimeError(f"{symbol} is not offered by this broker")
         tfc = getattr(mt5, f"TIMEFRAME_{tf}")
-        rates = mt5.copy_rates_from_pos(name, tfc, 1, count)
+        rates = mt5.copy_rates_from_pos(name, tfc, 0 if live else 1, count)
         if rates is None or len(rates) == 0:              # history may still be downloading
             time.sleep(2)
-            rates = mt5.copy_rates_from_pos(name, tfc, 1, count)
+            rates = mt5.copy_rates_from_pos(name, tfc, 0 if live else 1, count)
         if rates is None or len(rates) == 0:
             raise RuntimeError(f"no data for {symbol} {tf}: {mt5.last_error()}")
         df = pd.DataFrame(rates)

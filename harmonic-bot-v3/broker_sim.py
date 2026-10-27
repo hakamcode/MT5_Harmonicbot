@@ -104,8 +104,11 @@ class SimBroker:
     def resolve(self, symbol):
         return symbol if symbol in self.data else None
 
-    def candles(self, symbol, tf, count):
-        d = self.data[symbol].iloc[:self.bar]
+    def watch_symbols(self):
+        return list(self.data)
+
+    def candles(self, symbol, tf, count, live=False):
+        d = self.data[symbol].iloc[:self.bar + (1 if live else 0)]
         return d.iloc[-count:]
 
     def spec(self, symbol):

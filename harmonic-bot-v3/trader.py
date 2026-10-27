@@ -5,6 +5,7 @@ The app (app.py) only reads Bot.snapshot and puts commands (start, stop, close_a
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -41,7 +42,10 @@ class Bot:
         self.events: deque = deque(maxlen=300)
         self.snapshot: dict = {}
         self.history: list[dict] = []          # closed bot trades, newest last
-        self.symbols = list(cfg["symbols"])
+        self.notices: deque = deque(maxlen=20)  # pop-up notifications for the app: (level, title, text)
+        self.live_key: str | None = None       # setup whose chart the app is showing (refreshed every 5 s)
+        self._live_t = 0.0
+        self.symbols = list(cfg["symbols"]) if isinstance(cfg["symbols"], list) else []
         self._digits: dict[str, int] = {}
         self._load()
 
@@ -71,9 +75,14 @@ class Bot:
         os.replace(tmp, self.state_file)
 
     # ------------------------------------------------------------------ messages
-    def event(self, text: str, telegram: bool = True, photo: str | None = None):
-        """Show in the app's log and (optionally) send to Telegram. Never raises."""
-        self.events.append((datetime.now().strftime("%d %b %H:%M:%S"), text.replace("<b>", "").replace("</b>", "")))
+    def event(self, text: str, telegram: bool = True, photo: str | None = None, toast: str | None = None):
+        """Show in the app's log, (optionally) pop up a notification and send to Telegram. Never raises.
+        toast: None, or the level of the pop-up: ok, info, warn, error."""
+        plain = text.replace("<b>", "").replace("</b>", "")
+        self.events.append((datetime.now().strftime("%d %b %H:%M:%S"), plain))
+        if toast:
+            title, _, body = plain.partition("\n")
+            self.notices.append((toast, title, body))
         log.info(text.replace("\n", " | "))
         if not telegram or self.tg is None:
             return
@@ -124,6 +133,9 @@ class Bot:
             self.block = self.broker.trading_check(bool(self.cfg.get("allow_live_trading")))
             self._scan()
             self.save()
+        if time.time() - self._live_t >= self.cfg.get("chart_refresh_seconds", 5):
+            self._live_t = time.time()
+            self._live_chart()
         self._status()
         self._snap(self.broker.account() or acc, self.broker.positions())
 
@@ -134,27 +146,32 @@ class Bot:
         why = self.broker.trading_check(bool(self.cfg.get("allow_live_trading")))
         if why:
             self.status = f"Not started: {why}"
-            self.event(f"⚠️ Bot NOT started: {why}.")
+            self.event(f"⚠️ <b>Bot NOT started</b>\n{why}.", toast="error")
             return
+        if isinstance(self.cfg["symbols"], str):          # "all" = every symbol in MT5's Market Watch
+            self.symbols = self.broker.watch_symbols()
         missing = [s for s in self.symbols if self.broker.resolve(s) is None]
         if missing:
             self.event("⚠️ Skipping symbols your broker doesn't offer: " + ", ".join(missing), telegram=False)
             self.symbols = [s for s in self.symbols if s not in missing]
         self.running, self.last_scan = True, 0.0
         mm = self.mm
+        day = (f"\n⚠️ No new trades until tomorrow: {self.day['stopped']}." if self.day.get("stopped") else "")
         self.event("▶️ <b>Butterfly bot v3 STARTED</b>\n"
-                   f"Symbols: {', '.join(self.symbols)} · {', '.join(self.cfg['timeframes'])}\n"
+                   f"Scanning {len(self.symbols)} symbols on {', '.join(self.cfg['timeframes'])}\n"
                    f"Risk {mm['risk_percent']}% per trade · max {mm['max_open_positions']} open at once\n"
                    f"TP1 {self.bf['tp1_ad']} of A→D (close {mm['tp1_close_percent']}%, SL to entry) · "
                    f"TP2 {self.bf['tp2_ad']} of A→D\n"
-                   f"Daily loss limit {mm['daily_loss_limit_percent']}% of balance")
+                   f"Daily loss limit {mm['daily_loss_limit_percent']}% of balance" + day
+                   + ("" if self.tg else "\nTelegram is OFF (check bot_token / chat_id in config.json)"),
+                   toast="warn" if day else "ok")
 
     def stop(self):
         if not self.running:
             return
         self.running = False
-        self.event("⏸ <b>Bot STOPPED</b>: no new trades. Open trades keep their stop loss and TP2 in MT5, "
-                   "and TP1 is still managed while the app is open.")
+        self.event("⏸ <b>Bot STOPPED</b>\nNo new trades. Open trades keep their stop loss and TP2 in MT5, "
+                   "and TP1 is still managed while the app is open.", toast="info")
 
     def close_all(self, reason: str = "Close All button"):
         scope_all = self.mm.get("close_all_button", "bot") == "all"
@@ -212,7 +229,7 @@ class Bot:
             self.event(f"🛑 <b>TRADING STOPPED FOR TODAY</b>\n{self.day['stopped']} ≥ "
                        f"{self.mm['daily_loss_limit_percent']}%.\nNo new trades until tomorrow. "
                        + ("All bot positions are being closed." if closing else
-                          "Open trades keep their stop loss and take profit."))
+                          "Open trades keep their stop loss and take profit."), toast="warn")
             self.save()
             if closing:
                 self.close_all("Daily loss limit")
@@ -273,27 +290,51 @@ class Bot:
                     return True
         return False
 
-    def _chart(self, df, s: Setup) -> str | None:
-        fn = os.path.join(self.chart_dir, f"{s.symbol}_{s.timeframe}_{s.state}_{df.index[-1]:%Y%m%d%H%M}.png")
+    def _chart(self, df, s: Setup, live: bool = False) -> str | None:
+        """One picture per setup, redrawn in place (the app shows it, Telegram gets a copy when it is sent)."""
+        tag = hashlib.md5(s.key.encode()).hexdigest()[:8]
+        fn = os.path.join(self.chart_dir, f"{s.symbol}_{s.timeframe}_{tag}.png")
         try:
-            return chart.render(df, [s], fn, digits=self.broker.spec(s.symbol)["digits"])
+            q = self.broker.quote(s.symbol) if live else None
+            tmp = fn + ".tmp.png"
+            chart.render(df, [s], tmp, digits=self.digits(s.symbol), price=q[0] if q else None)
+            os.replace(tmp, fn)
+            return fn
         except Exception:
             log.exception("chart failed")
             return None
 
+    def _live_chart(self):
+        """Redraw the chart the app is showing with the latest candles and price."""
+        s = self.setups.get(self.live_key or "")
+        if s is None or s.state not in ("WATCH", "OPEN"):
+            return
+        try:
+            df = self.broker.candles(s.symbol, s.timeframe, self.cfg.get("bars", 500), live=True)
+        except Exception:
+            log.exception("live chart data failed")
+            return
+        path = self._chart(df, s, live=True)
+        if path:
+            s.chart = path
+            if s.ticket and str(s.ticket) in self.trades:
+                self.trades[str(s.ticket)]["chart"] = path
+
     # ------------------------------------------------------------------ opening a trade
-    def _why_not(self, s: Setup) -> str | None:
+    def _why_not(self, s: Setup) -> tuple[str | None, bool]:
+        """(reason the bot may not open this trade, True if it is only waiting for a free place)"""
         if self.block:
-            return self.block
+            return self.block, False
         if self.day.get("stopped"):
-            return self.day["stopped"]
+            return self.day["stopped"], False
         bot_pos = [p for p in self.broker.positions() if p["bot"]]
         if len(bot_pos) >= int(self.mm["max_open_positions"]):
-            return f"already {len(bot_pos)} positions open (maximum {self.mm['max_open_positions']} at the same time)"
+            return (f"already {len(bot_pos)} positions open (maximum {self.mm['max_open_positions']} "
+                    "at the same time)"), True
         name = self.broker.resolve(s.symbol)
         if self.mm.get("one_position_per_symbol", True) and any(p["symbol"] == name for p in bot_pos):
-            return f"the bot already has a position on {s.symbol}"
-        return None
+            return f"the bot already has a position on {s.symbol}", True
+        return None, False
 
     def _lot(self, balance: float, dist: float, spec: dict) -> tuple[float | None, str]:
         risk_money = balance * self.mm["risk_percent"] / 100
@@ -315,7 +356,14 @@ class Bot:
 
     def _open(self, s: Setup, df):
         sym, buy = s.symbol, s.side == "buy"
-        why = self._why_not(s)
+        why, slot = self._why_not(s)
+        if why and slot:
+            # all 3 places taken: keep watching, enter on a later reversal candle if a place frees up in time
+            if s.note != why:
+                s.note = why
+                self.event(f"⏳ {sym} {s.timeframe} {s.label}: entry signal, but {why}. "
+                           "The bot keeps watching it and enters if a place frees up while the setup is still valid.")
+            return
         if why:
             s.state, s.note = "SKIPPED", why
             self.event(f"⚠️ {sym} {s.timeframe} {s.label}: entry signal but NOT trading, {why}.")
@@ -347,7 +395,7 @@ class Bot:
         ticket, fill, err = self.broker.open(sym, s.side, lot, sl, tp2, f"v3 Butterfly {s.timeframe}")
         if err:
             s.state, s.note = "SKIPPED", err
-            self.event(f"❗ <b>Order FAILED</b> {s.side.upper()} {lot} {sym}: {err}")
+            self.event(f"❗ <b>Order FAILED</b> {s.side.upper()} {lot} {sym}\n{err}", toast="error")
             return
         s.state, s.ticket, s.entry, s.entry_time, s.sl = "OPEN", ticket, fill, str(df.index[-1]), sl
         s.tp1, s.tp2, s.mid = tp1, tp2, (tp1 + tp2) / 2
@@ -362,7 +410,7 @@ class Bot:
                 f"TP2 {f(tp2)}\nRR to TP1 {rr:.2f} · ticket {ticket}")
         s.chart = self._chart(df, s) or ""
         self.trades[str(ticket)]["chart"] = s.chart
-        self.event(text, photo=s.chart or None)
+        self.event(text, photo=s.chart or None, toast="ok")
 
     # ------------------------------------------------------------------ managing open trades
     def _manage(self, positions: list[dict]):
@@ -404,7 +452,7 @@ class Bot:
         tr["tp1_done"] = True
         self.save()
         self.event(f"✅ <b>TP1 HIT {sym} {tr['timeframe']}</b> {tr['side'].upper()} at {self._f(sym, tr['tp1'])}\n"
-                   + "\n".join(msg) + f"\nRest targets TP2 {self._f(sym, tr['tp2'])}")
+                   + "\n".join(msg) + f"\nRest targets TP2 {self._f(sym, tr['tp2'])}", toast="ok")
 
     def _closed(self, tr: dict, info: dict | None):
         sym = tr["symbol"]
@@ -434,7 +482,7 @@ class Bot:
             head = f"⚠️ <b>{sym} closed by the broker (stop out)</b> at {price}"
         else:
             head = f"✋ <b>{sym} closed manually</b> at {price}"
-        self.event(f"{head}\nResult of this trade: {pl}")
+        self.event(f"{head}\nResult of this trade: {pl}", toast="ok" if info["profit"] >= 0 else "warn")
 
     # ------------------------------------------------------------------ for the app
     def _status(self):
@@ -455,7 +503,8 @@ class Bot:
             stage = ("manual" if not p["bot"] else "bot" if not tr else
                      "TP1 done, SL at entry" if tr["tp1_done"] else f"waiting TP1 {self._f(tr['symbol'], tr['tp1'])}")
             rows.append({**p, "stage": stage, "timeframe": tr["timeframe"] if tr else "",
-                         "digits": self.digits(p["symbol"]), "chart": (tr or {}).get("chart", "")})
+                         "digits": self.digits(p["symbol"]), "chart": (tr or {}).get("chart", ""),
+                         "key": (tr or {}).get("setup", "")})
         start = self.day.get("start_balance")
         self.snapshot = dict(
             running=self.running, status=self.status, account=acc, positions=rows,
@@ -463,7 +512,8 @@ class Bot:
             day_limit=(start or 0) * self.mm["daily_loss_limit_percent"] / 100,
             day_stopped=self.day.get("stopped", ""),
             watching=[dict(symbol=s.symbol, timeframe=s.timeframe, label=s.label, inner=s.prz_inner, outer=s.prz_outer,
-                           stop=s.stop, touched=s.touched, digits=self.digits(s.symbol), chart=s.chart)
+                           stop=s.stop, touched=s.touched, digits=self.digits(s.symbol), chart=s.chart,
+                           key=s.key, waiting=bool(s.note and s.touched))
                       for s in self.setups.values() if s.state == "WATCH"],
             events=list(self.events), history=list(self.history[-100:]), quotes=self._quotes())
 

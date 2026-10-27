@@ -345,6 +345,8 @@ class App:
             d = s["digits"]
             rows.append(((s["symbol"], s["timeframe"], s["label"], f"{s['inner']:.{d}f} – {s['outer']:.{d}f}",
                           f"{s['stop']:.{d}f}",
+                          "IN THE PRZ, entry signal: waiting for a free place (max positions)"
+                          if s.get("waiting") else
                           "IN THE PRZ, waiting for reversal candle" if s["touched"] else "waiting for price"),
                          ("buy" if "Bullish" in s["label"] else "sell",)))
         self._fill(self.watch, rows)
@@ -378,6 +380,46 @@ class App:
 
         self._chart_tabs(snap)
         self._draw_chart()
+        while self.bot.notices:
+            self._toast(*self.bot.notices.popleft())
+
+    # ------------------------------------------------------------------ pop-up notifications (bottom right)
+    def _toast(self, level, title, body):
+        color = {"ok": ON, "info": BUY, "warn": WARN, "error": SELL}.get(level, BUY)
+        t = tk.Toplevel(self.root)
+        t.overrideredirect(True)
+        t.attributes("-topmost", True)
+        t.configure(bg=LINE)
+        frame = tk.Frame(t, bg=PANEL)
+        frame.pack(fill="both", expand=True, padx=1, pady=1)
+        tk.Frame(frame, bg=color, width=6).pack(side="left", fill="y")
+        box = tk.Frame(frame, bg=PANEL, padx=12, pady=8)
+        box.pack(side="left", fill="both", expand=True)
+        tk.Label(box, text=title.strip(), bg=PANEL, fg=color, font=BOLD, anchor="w", justify="left",
+                 wraplength=340).pack(fill="x")
+        if body.strip():
+            tk.Label(box, text=body.strip()[:400], bg=PANEL, fg=TEXT, font=FONT, anchor="w", justify="left",
+                     wraplength=340).pack(fill="x", pady=(3, 0))
+        self.toasts = [x for x in getattr(self, "toasts", []) if x.winfo_exists()] + [t]
+        self._place_toasts()
+        close = lambda e=None: (t.destroy(), self._place_toasts())
+        for w in (t, frame, box) + tuple(box.winfo_children()):
+            w.bind("<Button-1>", close)
+        t.after(8000, lambda: t.winfo_exists() and close())
+        self.root.bell()
+
+    def _place_toasts(self):
+        self.toasts = [x for x in getattr(self, "toasts", []) if x.winfo_exists()]
+        self.root.update_idletasks()
+        right = self.root.winfo_rootx() + self.root.winfo_width() - 12
+        bottom = self.root.winfo_rooty() + self.root.winfo_height() - 40
+        for t in reversed(self.toasts[-4:]):
+            t.update_idletasks()
+            w, h = max(t.winfo_reqwidth(), 300), t.winfo_reqheight()
+            t.geometry(f"{w}x{h}+{right - w}+{bottom - h}")
+            bottom -= h + 8
+        for t in self.toasts[:-4]:
+            t.destroy()
 
     # ------------------------------------------------------------------ chart window
     def _charts(self, snap):
@@ -385,31 +427,33 @@ class App:
         out = []
         for p in snap["positions"]:
             if p.get("chart") and os.path.exists(p["chart"]):
-                out.append((f"{p['symbol']},{p['timeframe']} #{p['ticket']}", p["chart"]))
+                out.append((f"{p['symbol']},{p['timeframe']} #{p['ticket']}", p["chart"], p.get("key")))
         for s in snap["watching"]:
             if s.get("chart") and os.path.exists(s["chart"]):
-                out.append((f"{s['symbol']},{s['timeframe']} {s['label'].split()[0]}", s["chart"]))
+                out.append((f"{s['symbol']},{s['timeframe']} {s['label'].split()[0]}", s["chart"], s.get("key")))
         return out
 
     def _chart_tabs(self, snap):
         charts = self._charts(snap)
-        paths = [p for _, p in charts]
+        paths = [p for _, p, _ in charts]
         if self.chart_path not in paths and (paths or not os.path.exists(self.chart_path)):
             self.chart_path = paths[0] if paths else ""   # else keep showing the last chart
+        self.chart_keys = {p: k for _, p, k in charts}
+        self.bot.live_key = self.chart_keys.get(self.chart_path)    # the bot redraws this chart every 5 s
         key = tuple(charts), self.chart_path
         if getattr(self, "_tabs_key", None) == key:
             return
         self._tabs_key = key
         for w in self.chart_tabs.winfo_children():
             w.destroy()
-        for title, path in charts[:10]:
+        for title, path, _ in charts[:10]:
             active = path == self.chart_path
             b = tk.Label(self.chart_tabs, text=title, font=FONT, padx=8, pady=2, cursor="hand2",
                          bg=PANEL if active else HEAD, fg=TEXT if active else MUTED,
                          relief="solid" if active else "flat", bd=1 if active else 0)
             b.pack(side="left")
             b.bind("<Button-1>", lambda e, p=path: self._show(p))
-        title = next((t for t, p in charts if p == self.chart_path), None)
+        title = next((t for t, p, _ in charts if p == self.chart_path), None)
         if title:
             self.chart_title.config(text=f"Chart: {title}")
         elif self.chart_path:
@@ -419,6 +463,7 @@ class App:
 
     def _show(self, path):
         self.chart_path = path
+        self.bot.live_key = getattr(self, "chart_keys", {}).get(path, self.bot.live_key)
         self._tabs_key = None
         self._draw_chart(force=True)
 
@@ -441,11 +486,15 @@ class App:
         if w < 50 or h < 50:
             return
         path = self.chart_path
-        if not force and self.chart_cache[0] == path and self.chart_cache[1] == (w, h):
+        try:
+            mtime = os.path.getmtime(path) if path else 0
+        except OSError:
+            mtime = 0
+        if not force and self.chart_cache[0] == path and self.chart_cache[1] == (w, h, mtime):
             return
         self.canvas.delete("all")
         if not path or not os.path.exists(path):
-            self.chart_cache = (path, (w, h), None)
+            self.chart_cache = (path, (w, h, mtime), None)
             self.canvas.create_text(w // 2, h // 2, fill=MUTED, font=FONT, justify="center",
                                     text="Charts of forming Butterflies and open trades appear here.\n"
                                          "Press Start Bot to begin scanning.")
@@ -458,12 +507,14 @@ class App:
         except Exception:
             logging.exception("could not show chart %s", path)
             return
-        self.chart_cache = (path, (w, h), photo)
+        self.chart_cache = (path, (w, h, mtime), photo)
         self.canvas.create_image(w // 2, h // 2, image=photo)
 
     # ------------------------------------------------------------------ buttons
     def _toggle(self):
-        self.bot.commands.put("stop" if self.bot.snapshot.get("running") else "start")
+        starting = not self.bot.snapshot.get("running")
+        self.algo_btn.config(text="…  Starting" if starting else "…  Stopping", fg=MUTED)
+        self.bot.commands.put("start" if starting else "stop")
 
     def _trade_menu(self, event):
         iid = self.trade.identify_row(event.y)

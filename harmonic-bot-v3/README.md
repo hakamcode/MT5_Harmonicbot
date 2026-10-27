@@ -16,6 +16,10 @@ What you see in the app (laid out like MetaTrader 5):
   - **History**: the bot's closed trades, how they closed (TP2, stop loss, ...) and the total result
   - **Journal**: everything the bot did (the same messages go to Telegram)
 - **Status bar**: what the bot is doing, connection, and today's P/L with the daily stop level
+- **Pop-up notifications** (bottom right, with a sound) when you press Start or Stop, when Start is refused
+  (and why), when a trade opens, hits TP1, closes, and when the daily loss limit stops the bot
+- The chart you are looking at is **redrawn every 5 seconds** with the newest candles and a live price line
+  (`chart_refresh_seconds` in `config.json`)
 
 v2 (`harmonic-bot`) is untouched and still works on its own.
 
@@ -34,6 +38,7 @@ All numbers are in `config.json` and can be changed.
 | At TP1 | close 50% and move the stop loss to the entry price (the rest can't lose any more) | `money.tp1_close_percent`, `move_sl_to_entry_at_tp1` |
 | Lot size | so that hitting the stop loses **1% of the balance** | `money.risk_percent` |
 | Biggest lot ever | 1.0 | `money.max_lot` |
+| Scanning | no limit: every symbol and timeframe, every new candle. When 3 positions are already open, a new entry signal is kept and the bot enters on a later reversal candle if a place frees up while the setup is still valid | `symbols` (or `"all"` = every symbol in MT5's Market Watch), `timeframes` |
 | Open positions | **max 3 at the same time**; no limit per day | `money.max_open_positions` |
 | One trade per symbol | yes | `money.one_position_per_symbol` |
 | Daily stop | when today's loss reaches **3% of the balance** the bot stops opening trades until the next day and tells you why | `money.daily_loss_limit_percent` |
